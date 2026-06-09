@@ -27,7 +27,7 @@
 FROM docker.m.daocloud.io/library/mongo:7.0
 
 # 应用数据库初始化脚本（仅在首次启动且数据库为空时执行）
-COPY mongo/init-mongo.js /docker-entrypoint-initdb.d/init-mongo.js
+COPY init-mongo.js /docker-entrypoint-initdb.d/init-mongo.js
 
 # 可选：自定义 MongoDB 配置文件
 # COPY mongo/mongod.conf /etc/mongod.conf

@@ -252,7 +252,19 @@
 // ============================================================
 // Configuration
 // ============================================================
-const API = window.location.origin + '/api/v1';
+function resolveApiBase() {
+  if (window.API_BASE_URL) {
+    return window.API_BASE_URL.replace(/\/$/, '');
+  }
+
+  if (window.location.protocol === 'file:') {
+    return 'http://127.0.0.1:8000';
+  }
+
+  return window.location.origin;
+}
+
+const API = resolveApiBase() + '/api/v1';
 
 // ============================================================
 // State

@@ -65,6 +65,7 @@ async def _validate_section(project_id: str, section: dict[str, Any]) -> list[st
     risks = section.get("risks")
     incoming_sources = _normalize_sources(section.get("sources"))
     existing_sources = project.get("sources") if isinstance(project, dict) else []
+    normalized_existing_sources = _normalize_sources(existing_sources)
     known_source_ids = _source_ids(incoming_sources) | _source_ids(existing_sources)
     referenced_source_ids: set[str] = set()
 
@@ -104,6 +105,19 @@ async def _validate_section(project_id: str, section: dict[str, Any]) -> list[st
             "section.sources 缺少以下 source_id 的来源详情: "
             + ", ".join(sorted(missing_source_ids))
         )
+    sources_by_id = {
+        source["source_id"]: source
+        for source in [*normalized_existing_sources, *incoming_sources]
+        if source.get("source_id")
+    }
+    for index, source in enumerate(incoming_sources, start=1):
+        source_id = source.get("source_id") or f"第 {index} 个来源"
+        if _source_requires_url(source) and not _is_http_url(source.get("url")):
+            errors.append(f"section.sources[{source_id}].url 不能为空，公开来源必须提供 http(s) URL")
+    for source_id in sorted(referenced_source_ids):
+        source = sources_by_id.get(source_id)
+        if source and _source_requires_url(source) and not _is_http_url(source.get("url")):
+            errors.append(f"evidence_chain 引用的公开来源 {source_id} 缺少 http(s) URL")
     if isinstance(risks, list):
         for index, risk in enumerate(risks, start=1):
             if _contains_placeholder(_clean_text(risk)):
@@ -238,6 +252,16 @@ def _source_ids(value: Any) -> set[str]:
         if source_id:
             source_ids.add(source_id)
     return source_ids
+
+
+def _source_requires_url(source: dict[str, Any]) -> bool:
+    source_type = _clean_text(source.get("source_type"))
+    return source_type not in {"internal_knowledge_base"}
+
+
+def _is_http_url(value: Any) -> bool:
+    url = _clean_text(value)
+    return url.startswith(("http://", "https://"))
 
 
 def _outline_node_ids(nodes: list[Any]) -> set[str]:

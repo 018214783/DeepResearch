@@ -623,6 +623,20 @@ class ResearchAgent:
                 raise ValueError(
                     f"章节 {section.section_id} 缺少来源详情: {', '.join(sorted(missing_source_ids))}"
                 )
+            for source in section.sources:
+                if not source.source_id:
+                    raise ValueError(f"章节 {section.section_id} 存在缺少 source_id 的来源")
+                if (
+                    source.source_type != "internal_knowledge_base"
+                    and not self._is_http_url(source.url)
+                ):
+                    raise ValueError(
+                        f"章节 {section.section_id} 的公开来源 {source.source_id} 缺少 http(s) URL"
+                    )
+
+    @staticmethod
+    def _is_http_url(value: str | None) -> bool:
+        return bool(value and value.startswith(("http://", "https://")))
 
     def _build_fact_cards_from_sections(self, sections: list[ResearchSection]) -> list[FactCard]:
         """从章节证据链确定性聚合事实卡片。"""
