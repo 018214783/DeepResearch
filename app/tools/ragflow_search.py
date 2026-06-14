@@ -6,7 +6,8 @@ from loguru import logger
 
 from app.config.config import get_settings
 
-REQUEST_TIMEOUT_SECONDS = 30
+REQUEST_TIMEOUT_SECONDS = 90
+PLACEHOLDER_API_KEYS = {"your-ragflow-api-key", "your_api_key", "sk-xxx"}
 
 
 async def ragflow_search(
@@ -37,7 +38,7 @@ async def ragflow_search(
         }
 
     settings = get_settings()
-    if not settings.ragflow_base_url or not settings.ragflow_api_key:
+    if not settings.ragflow_base_url or not _has_real_api_key(settings.ragflow_api_key):
         logger.warning("RAGFlow 配置不完整，跳过内部知识库检索")
         return {
             "status": "skipped",
@@ -47,13 +48,14 @@ async def ragflow_search(
             "error": "RAGFLOW_BASE_URL 或 RAGFLOW_API_KEY 未配置",
         }
 
+    dataset_ids = dataset_ids or _parse_csv_ids(settings.ragflow_default_dataset_ids)
     if not dataset_ids and not document_ids:
         return {
             "status": "skipped",
             "provider": "ragflow",
             "query": normalized_query,
             "chunks": [],
-            "error": "dataset_ids 和 document_ids 至少需要提供一项",
+            "error": "dataset_ids、document_ids 或 RAGFLOW_DEFAULT_DATASET_IDS 至少需要提供一项",
         }
 
     payload: dict[str, Any] = {
@@ -85,13 +87,14 @@ async def ragflow_search(
             response.raise_for_status()
             response_data = response.json()
     except (httpx.HTTPError, ValueError) as exc:
-        logger.warning("RAGFlow 检索失败，query={}, error={}", normalized_query, exc)
+        error = _format_error(exc)
+        logger.warning("RAGFlow 检索失败，query={}, error={}", normalized_query, error)
         return {
             "status": "error",
             "provider": "ragflow",
             "query": normalized_query,
             "chunks": [],
-            "error": str(exc),
+            "error": error,
         }
 
     if response_data.get("code") not in {0, None}:
@@ -125,15 +128,39 @@ def _extract_chunks(response_data: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def _has_real_api_key(api_key: str | None) -> bool:
+    if not api_key:
+        return False
+    return api_key.strip() not in PLACEHOLDER_API_KEYS
+
+
+def _parse_csv_ids(value: str | None) -> list[str] | None:
+    if not value:
+        return None
+    ids = [item.strip() for item in value.split(",") if item.strip()]
+    return ids or None
+
+
+def _format_error(exc: Exception) -> str:
+    message = str(exc).strip()
+    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+
+
 def _normalize_chunk(item: dict[str, Any]) -> dict[str, Any]:
+    print(f'当前的item为：\n\n{item}')
     content = item.get("content") or item.get("text") or item.get("chunk") or ""
+    score = item.get("similarity")
+    if score is None:
+        score = item.get("score")
     return {
         "chunk_id": item.get("id") or item.get("chunk_id"),
         "document_id": item.get("document_id") or item.get("doc_id"),
         "dataset_id": item.get("dataset_id"),
-        "document_name": item.get("document_name") or item.get("docnm_kwd"),
+        "document_name": item.get("document_name")
+        or item.get("document_keyword")
+        or item.get("docnm_kwd"),
         "content": content,
-        "score": item.get("similarity") or item.get("score"),
+        "score": score,
         "metadata": item.get("metadata") or {},
         "source_type": "internal_knowledge_base",
     }
